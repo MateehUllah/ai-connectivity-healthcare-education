@@ -1,0 +1,70 @@
+# Python (Flask) files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# General node_modules
+node_modules/
+
+# Virtual environment
+env/
+venv/
+*.egg-info/
+
+# Flask logs
+*.log
+instance/
+
+# Config files
+*.ini
+*.env
+
+# Frontend (React)
+frontend/node_modules/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Build output (React)
+frontend/build/
+
+
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# MacOS-specific files
+.DS_Store
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# Coverage reports
+htmlcov/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Miscellaneous
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
