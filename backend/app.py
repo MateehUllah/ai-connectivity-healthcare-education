@@ -1,96 +1,167 @@
 from flask import Flask, request, jsonify
 import pandas as pd
 import joblib
+from flask_cors import CORS
+from utils.reverse_encode import get_worldbank_data, get_country_from_coordinates_google
+from utils.recommendations import generate_education_recommendations,generate_healthcare_recommendations
 
 app = Flask(__name__)
+CORS(app)
+
 
 education_model = joblib.load('models/education_connectivity_model.pkl')
 healthcare_model = joblib.load('models/healthcare_connectivity_model.pkl')
-scaler = joblib.load('models/scaler.pkl')  
+scaler = joblib.load('models/scaler_with_clustering.pkl')
+scaler_education=joblib.load('models/scaler.pkl')
+kmeans = joblib.load('models/kmeans_with_clustering.pkl')
 
-@app.route('/predict', methods=['POST'])
-def predict():
+file_path = 'datasets/healthcare-connectivity-dataset.csv'
+data = pd.read_csv(file_path)
+
+data = data.dropna(subset=['Latitude', 'Longitude'])
+
+facility_owner_categories = data['Facility_Owner'].astype('category').cat.categories
+facility_type_categories = data['Renamed_Facility_Type'].astype('category').cat.categories
+
+facility_owner_mapping = {category: code for code, category in enumerate(facility_owner_categories)}
+facility_type_mapping = {category: code for code, category in enumerate(facility_type_categories)}
+
+@app.route('/predict/healthcare', methods=['POST'])
+def predict_healthcare():
     """
-    Predict connectivity demand for education or healthcare.
+    Predict Healthcare Demand Score given facility details and coordinates.
+
+    This endpoint takes a JSON payload with Latitude, Longitude, Facility_Owner, 
+    and Renamed_Facility_Type, and returns a predicted Healthcare Demand Score.
+
+    Args:
+        Latitude (float): The latitude of the facility location.
+        Longitude (float): The longitude of the facility location.
+        Facility_Owner (str): The owner of the facility.
+        Renamed_Facility_Type (str): The type of the facility.
+
+    Returns:
+        A JSON response with the predicted Healthcare Demand Score.
+
+    Raises:
+        400: If the input is invalid, missing, or contains invalid values.
+        500: If there is an unexpected error during prediction.
     """
     try:
         data = request.json
-        service_type = data.get('service_type') 
-        features = ['Latitude', 'Longitude', 'Facility_Type_Encoded', 'Facility_Owner_Encoded']
+        if not data:
+            return jsonify({'error': 'No input data provided.'}), 400
 
-        if service_type not in ['education', 'healthcare']:
-            return jsonify({'error': 'Invalid service type. Use "education" or "healthcare".'}), 400
+        required_fields = ['Latitude', 'Longitude', 'facilityType', 'facilityOwnerType']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
 
-        input_data = pd.DataFrame([data])
+        try:
+            data['Facility_Owner_Encoded'] = facility_owner_mapping[data['facilityOwnerType']]
+            data['Facility_Type_Encoded'] = facility_type_mapping[data['facilityType']]
+        except KeyError as e:
+            return jsonify({'error': f'Invalid value for {str(e)}. Check your input data.'}), 400
 
-        input_data[['Latitude', 'Longitude']] = scaler.transform(input_data[['Latitude', 'Longitude']])
+        latitude = data['Latitude']
+        longitude = data['Longitude']
+        facility_type_encoded = data['Facility_Type_Encoded']
+        facility_owner_encoded = data['Facility_Owner_Encoded']
 
-        if service_type == 'education':
-            prediction = education_model.predict(input_data[features])
-        elif service_type == 'healthcare':
-            prediction = healthcare_model.predict(input_data[features])
+        scaled_coords = scaler.transform([[latitude, longitude]])
+        latitude_scaled, longitude_scaled = scaled_coords[0]
 
-        return jsonify({'predicted_demand': prediction.tolist()})
-    
+        cluster = kmeans.predict([[latitude_scaled, longitude_scaled]])[0]
+        interaction_term = latitude_scaled * longitude_scaled
+
+        input_features = pd.DataFrame([{
+            'Latitude_Scaled': latitude_scaled,
+            'Longitude_Scaled': longitude_scaled,
+            'Facility_Type_Encoded': facility_type_encoded,
+            'Facility_Owner_Encoded': facility_owner_encoded,
+            'Cluster': cluster,
+            'Interaction_Term': interaction_term
+        }])
+
+        demand_score = healthcare_model.predict(input_features)[0]
+
+        connectivity_score = (
+            0.4 * demand_score +
+            0.3 * (1 / (1 + abs(latitude_scaled - longitude_scaled))) +  
+            0.2 * cluster +  
+            0.1 * (len(data) / 100)  
+        )
+        connectivity_score = max(0, min(1, connectivity_score))  
+
+        recommendations = generate_healthcare_recommendations(data, demand_score)
+
+        return jsonify({
+            'Connectivity Score': round(connectivity_score, 2),
+            'Status': 'good' if connectivity_score > 0.75 else 'average',
+            'Recommendations': recommendations
+        })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/upload', methods=['POST'])
-def upload_dataset():
+@app.route('/predict/education', methods=['POST'])
+def predict_education():
     """
-    Upload a dataset for retraining or analysis.
-    """
-    try:
-        uploaded_file = request.files['file']
-        service_type = request.form.get('service_type')  
+    Predict Education Demand Score given a latitude and longitude.
 
-        # Validate inputs
-        if not uploaded_file:
-            return jsonify({'error': 'No file uploaded'}), 400
-        if service_type not in ['education', 'healthcare']:
-            return jsonify({'error': 'Invalid service type. Use "education" or "healthcare".'}), 400
+    This endpoint takes a JSON payload with Latitude and Longitude and returns a predicted Education Demand Score.
 
-        # Save uploaded file
-        file_path = f'datasets/{service_type}_uploaded.csv'
-        uploaded_file.save(file_path)
+    Args:
+        Latitude (float): The latitude of the location.
+        Longitude (float): The longitude of the location.
 
-        return jsonify({'status': f'Dataset uploaded successfully for {service_type}', 'file_path': file_path})
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    Returns:
+        A JSON response with the predicted Education Demand Score.
 
-
-@app.route('/retrain', methods=['POST'])
-def retrain():
-    """
-    Retrain a specific model using a new dataset.
+    Raises:
+        400: If the input is invalid or missing.
+        500: If there is an unexpected error.
     """
     try:
-        # Parse JSON input
         data = request.json
-        service_type = data.get('service_type')  # 'education' or 'healthcare'
-        dataset_path = data.get('dataset_path')  # Path to new dataset
+        if not data or 'Latitude' not in data or 'Longitude' not in data:
+            return jsonify({'error': 'Missing Latitude or Longitude in the input.'}), 400
 
-        # Validate inputs
-        if service_type not in ['education', 'healthcare']:
-            return jsonify({'error': 'Invalid service type. Use "education" or "healthcare".'}), 400
+        latitude = data['Latitude']
+        longitude = data['Longitude']
+        country_code = get_country_from_coordinates_google(latitude, longitude)
 
-        # Load dataset
-        new_data = pd.read_csv(dataset_path)
-        features = ['Latitude', 'Longitude', 'Facility_Type_Encoded', 'Facility_Owner_Encoded']
-        target = 'Demand_Score'
+        feature_data = get_worldbank_data(country_code)
+        feature_data['Latitude '] = latitude 
+        feature_data['Longitude'] = longitude
 
-        X = new_data[features]
-        y = new_data[target]
+        features = [
+            "Latitude ", "Longitude",
+            "OOSR_Primary_Age_Male", "OOSR_Primary_Age_Female",
+            "Youth_15_24_Literacy_Rate_Male", "Youth_15_24_Literacy_Rate_Female",
+            "Gross_Primary_Education_Enrollment", "Gross_Tertiary_Education_Enrollment",
+            "Birth_Rate", "Unemployment_Rate"
+        ]
 
-        model = RandomForestRegressor(n_estimators=100, random_state=42)
-        model.fit(X, y)
+        input_df = pd.DataFrame([feature_data], columns=features) 
 
-        model_path = f'models/{service_type}_connectivity_model_updated.pkl'
-        joblib.dump(model, model_path)
+        scaled_features = scaler_education.transform(input_df)
 
-        return jsonify({'status': f'Model retrained successfully for {service_type}', 'model_path': model_path})
+        prediction = education_model.predict(scaled_features)
+
+        demand_score = prediction[0]
+
+        connectivity_score = 1 - (demand_score / 500)  
+        status = "good" if connectivity_score > 0.8 else "needs improvement"
+
+        recommendations = generate_education_recommendations(feature_data, demand_score)
+
+        return jsonify({
+            'Connectivity Score': round(connectivity_score, 2),
+            'Status': status,
+            'Recommendations': recommendations
+        })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
