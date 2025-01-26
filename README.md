@@ -1,4 +1,4 @@
-### **README for AI-Driven Connectivity Planner**
+### **Enhancing Infrastructure and Accessibility**
 
 ---
 
