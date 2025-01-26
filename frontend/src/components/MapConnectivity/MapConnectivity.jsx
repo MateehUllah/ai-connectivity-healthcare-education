@@ -90,22 +90,12 @@ const MapConnectivity = () => {
             
             <div className="space-y-4 text-gray-700">
               <div className="flex items-center">
-                <span className="font-semibold min-w-[140px]">Connectivity Score:</span>
+                <span className="font-semibold min-w-[140px]">Demand Score:</span>
                 <span className="ml-2 font-mono bg-gray-100 px-2 py-1 rounded">
-                  {apiResponse['Connectivity Score']}
+                  {apiResponse['Demand Score']}
                 </span>
               </div>
               
-              <div className="flex items-center">
-                <span className="font-semibold min-w-[140px]">Status:</span>
-                <span className={`ml-2 px-2 py-1 rounded ${
-                  apiResponse.Status === 'needs improvement' 
-                    ? 'bg-yellow-100 text-yellow-800'
-                    : 'bg-green-100 text-green-800'
-                }`}>
-                  {apiResponse.Status}
-                </span>
-              </div>
 
               <div>
                 <h3 className="font-semibold mb-2">Recommendations:</h3>

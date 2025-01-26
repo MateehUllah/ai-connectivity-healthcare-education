@@ -83,21 +83,12 @@ def predict_healthcare():
             'Interaction_Term': interaction_term
         }])
 
-        demand_score = healthcare_model.predict(input_features)[0]
-
-        connectivity_score = (
-            0.4 * demand_score +
-            0.3 * (1 / (1 + abs(latitude_scaled - longitude_scaled))) +  
-            0.2 * cluster +  
-            0.1 * (len(data) / 100)  
-        )
-        connectivity_score = max(0, min(1, connectivity_score))  
+        demand_score = healthcare_model.predict(input_features)[0]        
 
         recommendations = generate_healthcare_recommendations(data, demand_score)
 
         return jsonify({
-            'Connectivity Score': round(connectivity_score, 2),
-            'Status': 'good' if connectivity_score > 0.75 else 'average',
+            'Demand Score': demand_score,
             'Recommendations': recommendations
         })
 
@@ -152,14 +143,10 @@ def predict_education():
 
         demand_score = prediction[0]
 
-        connectivity_score = 1 - (demand_score / 500)  
-        status = "good" if connectivity_score > 0.8 else "needs improvement"
-
         recommendations = generate_education_recommendations(feature_data, demand_score)
 
         return jsonify({
-            'Connectivity Score': round(connectivity_score, 2),
-            'Status': status,
+            'Demand Score': demand_score,
             'Recommendations': recommendations
         })
 
