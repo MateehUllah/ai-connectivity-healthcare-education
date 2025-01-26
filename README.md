@@ -203,16 +203,6 @@ Predict connectivity demand for **education** facilities.
 
 ---
 
-### **3. Docker (Optional)**
-Build and run the app using Docker:
-1. Build the Docker containers:
-   ```bash
-   docker-compose up --build
-   ```
-2. Access the Flask API at `http://127.0.0.1:5000` and the React app at `http://127.0.0.1:3000`.
-
----
-
 ## **How to Use**
 1. **Make Predictions**:
    - Send a POST request to `/predict/healthcare` or `/predict/education` with appropriate input data.
